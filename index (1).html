@@ -1,0 +1,219 @@
+<!DOCTYPE html>
+<html lang="ru"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Macrodata Refinement</title>
+<style>
+:root{--bg:#06141a;--fg:#bfeff2;--dim:#2c6a72;--acc:#5ff0ff;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+html,body{margin:0;height:100%;background:var(--bg);color:var(--fg);font-family:"Courier New",monospace;color-scheme:dark}
+body{display:flex;flex-direction:column;align-items:center;gap:10px;padding:10px;user-select:none;touch-action:none}
+header{width:100%;max-width:900px;display:flex;justify-content:space-between;align-items:center;border:2px solid var(--dim);padding:6px 12px;letter-spacing:2px;font-size:14px}
+#pct{font-size:20px;color:var(--acc)}
+#grid{display:grid;grid-template-columns:repeat(24,1fr);width:100%;max-width:900px;border:2px solid var(--dim);padding:8px;position:relative;cursor:crosshair}
+.c{text-align:center;font-size:clamp(10px,2.4vw,20px);padding:.3em 0;transition:transform .12s,color .12s,opacity .4s;will-change:transform}
+.c.glow{color:var(--acc)}
+.c.sel{color:#fff;background:#1d5b66}
+.c.hot{animation:j .12s infinite}
+.c.gone{opacity:0;pointer-events:none}
+@keyframes j{0%{translate:calc(var(--a,1)*-2px) calc(var(--a,1)*1px)}33%{translate:calc(var(--a,1)*2px) calc(var(--a,1)*-2px)}66%{translate:calc(var(--a,1)*-1px) calc(var(--a,1)*-2px)}100%{translate:calc(var(--a,1)*2px) calc(var(--a,1)*2px)}}
+#box{position:fixed;border:1px solid var(--acc);background:rgba(95,240,255,.12);display:none;pointer-events:none}
+#bins{display:flex;gap:6px;width:100%;max-width:900px}
+.b{flex:1;border:2px solid var(--dim);height:46px;position:relative;text-align:center;font-size:12px;overflow:hidden}
+.b i{position:absolute;left:0;bottom:0;width:100%;height:0;background:var(--dim);transition:height .6s;z-index:0}
+.b span{position:relative;z-index:1;line-height:46px}
+#msg{min-height:22px;color:var(--acc);text-align:center}
+#ov{position:fixed;inset:0;z-index:9;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px;text-align:center;padding:20px}
+#ov[hidden]{display:none}
+#lg{position:fixed;top:calc(env(safe-area-inset-top,0px) + 12px);right:16px;z-index:20;font:inherit;font-size:13px;padding:2px 10px;background:#06141a;color:var(--acc);border:1px solid var(--acc);cursor:pointer}
+header{padding-right:70px}
+#ov button{font:inherit;padding:8px 18px;background:#06141a;color:var(--acc);border:2px solid var(--acc);cursor:pointer}
+.mde{background:linear-gradient(120deg,#ff3d81,#ffb300,#2bd9ff,#7b5cff);background-size:400% 400%;animation:bg 3s linear infinite;color:#fff}
+.mde h1{font-size:clamp(28px,8vw,64px);margin:0;animation:pl .43s infinite alternate}
+@keyframes bg{to{background-position:100% 50%}}
+@keyframes pl{to{transform:scale(1.15) rotate(-3deg)}}
+.mde[data-g=techno]{background-image:linear-gradient(120deg,#05050a,#2b0a5e,#00ffd0,#05050a)}
+.mde[data-g=jazz]{background-image:linear-gradient(120deg,#2a1a0a,#8a5a14,#d9a441,#2a1a0a)}
+.mde[data-g=rock]{background-image:linear-gradient(120deg,#1a0000,#c1121f,#222,#c1121f)}
+#gn{display:flex;gap:8px;flex-wrap:wrap;justify-content:center}
+#tm{font-size:22px}
+.br{background:#e9f1ee;color:#12312c}
+.wl{background:#dfeee3;color:#1f3d33}
+#wf{font-size:clamp(20px,4vw,30px);max-width:640px;padding:18px;background:#fff;border:2px solid #1f3d33}
+#wb{display:flex;gap:10px;flex-wrap:wrap;justify-content:center}
+#wm{min-height:24px;margin:0}
+#tg{max-width:600px;font-size:18px;line-height:1.5;color:#6b8580}
+#ta{width:100%;max-width:600px;font:inherit;font-size:16px;padding:8px;background:#fff;color:#12312c;border:2px solid #12312c}
+</style></head><body>
+<header><span>LUMON · MACRODATA REFINEMENT · «Cold Harbor»</span><span id="lvl">LEVEL 1/5</span><span id="err">ERR 0/10</span><span id="pct">0%</span></header>
+<div id="grid"></div>
+<div id="bins"></div>
+<div id="msg">Зажмите кнопку и проведите по числам, от которых становится не по себе.</div>
+<div id="box"></div>
+<div id="ov" hidden></div>
+<button id="lg">EN</button>
+<script>
+const COLS=24,ROWS=13,N=COLS*ROWS,GOAL=10,grid=document.getElementById('grid'),box=document.getElementById('box'),msgEl=document.getElementById('msg');
+let lang='ru',cur='';
+const EN={
+'Уровень 1. Нужные числа светятся и дрожат. Проведите по ним.':'Level 1. The right numbers glow and tremble. Drag across them.',
+'Уровень 2. Подсветки больше нет, но дрожь видна.':'Level 2. No more glow, but you can still see the tremble.',
+'Уровень 3. Дрожат только числа рядом с курсором.':'Level 3. Only numbers near the cursor tremble.',
+'Уровень 4. Появились ложные дрожащие числа.':'Level 4. False trembling numbers have appeared.',
+'Уровень 5. Прислушайтесь к своим чувствам.':'Level 5. Listen to your feelings.',
+'Нет. Прислушайтесь к своим чувствам.':'No. Listen to your feelings.',
+'Уровень пройден. Переход дальше...':'Level complete. Moving on...',
+'Отдел доволен вами. Вафельная вечеринка!':'The department is pleased with you. Waffle party!',
+'Работа — таинство и удовольствие.':'The work is a mystery and a delight.',
+'Вы — хороший сотрудник.':'You are a good employee.',
+'Ваш отдел вами гордится.':'Your department is proud of you.',
+'Мистер Милчик гордится вашей работой. Танцуйте.':'Mr. Milchick is proud of your work. Dance.',
+'Вернуться к работе':'Back to work','Выберите жанр:':'Choose a genre:',
+'Ваш аути отлично плавает.':'Your outie swims very well.',
+'Ваш аути любит печь хлеб по воскресеньям.':'Your outie loves baking bread on Sundays.',
+'Ваш аути пишет стихи по вечерам.':'Your outie writes poems in the evenings.',
+'Ваш аути любит ходить в горы.':'Your outie loves hiking in the mountains.',
+'Вы очень внимательно слушаете коллег.':'You listen very attentively to your colleagues.',
+'Вы аккуратно ведёте свои записи.':'You keep your notes neatly.',
+'Вы хорошо работаете с числами.':'You are good with numbers.',
+'Вы умеете находить закономерности.':'You are good at finding patterns.',
+'Люблю этот факт':'I love this fact',
+'Не люблю этот факт':'I do not love this fact',
+'Мисс Кейси: «Я прочитаю вам факты, а вы скажете, любите ли вы их.»':'Ms. Casey: “I will read you some facts, and you will tell me whether you love them.”',
+'Мисс Кейси: «Это нездоровый ответ. Вас ждёт мистер Милчик.»':'Ms. Casey: “That is not a healthy answer. Mr. Milchick is waiting for you.”',
+'Мисс Кейси: «Спасибо. Это здоровый ответ.»':'Ms. Casey: “Thank you. That is a healthy answer.”',
+'Сессия окончена. Вы чувствуете спокойствие.':'Session complete. You feel calm.','Мистер Милчик: «Мне не кажется, что вы сожалеете. Напишите ещё раз.»':'Mr. Milchick: “I do not feel that you are sorry. Write it again.”',
+'БРЕЙКРУМ':'BREAK ROOM',
+'Мистер Милчик ждёт. Перепишите заявление без ошибок:':'Mr. Milchick is waiting. Type the statement without mistakes:',
+'Спасибо. Вы прощены.':'Thank you. You are forgiven.'};
+const tr=s=>lang==='en'&&EN[s]||s;
+const msg={set textContent(s){cur=s;msgEl.textContent=tr(s)}};
+document.getElementById('lg').onclick=()=>{lang=lang==='ru'?'en':'ru';document.documentElement.lang=lang;
+ document.getElementById('lg').textContent=lang==='ru'?'EN':'RU';msgEl.textContent=tr(cur);
+ const o=document.getElementById('ov');if(!o.hidden){if(o.className==='br')breakroom();else if(o.className==='wl')wellness(1);else mde(1)}};
+const cells=[],clusters=[];let done=0,mx=-999,my=-999,drag=null,rects=[];
+const rnd=n=>Math.floor(Math.random()*n);
+for(let i=0;i<N;i++){const e=document.createElement('div');e.className='c';e.textContent=rnd(10);grid.appendChild(e);cells.push({e,c:-1})}
+const bins=document.getElementById('bins'),fills=[];
+for(let i=0;i<5;i++){const b=document.createElement('div');b.className='b';b.innerHTML='<i></i><span>0'+(i+1)+'</span>';bins.appendChild(b);fills.push(b.firstChild)}
+let binCount=[0,0,0,0,0];
+function spawn(){
+  for(let t=0;t<50;t++){
+    let cur=rnd(N);const set=new Set([cur]);
+    while(set.size<L.size){const x=cur%COLS,y=Math.floor(cur/COLS),d=[[1,0],[-1,0],[0,1],[0,-1]][rnd(4)],nx=x+d[0],ny=y+d[1];
+      if(nx>=0&&nx<COLS&&ny>=0&&ny<ROWS)cur=ny*COLS+nx;set.add(cur)}
+    const idx=[...set];
+    if(idx.some(i=>cells[i].c>=0))continue;
+    const id=clusters.length;clusters.push(idx);idx.forEach(i=>cells[i].c=id);spawned++;return;
+  }
+}
+let lv=0,L,spawned=0,locked=false,errs=0,strokeErr=false;
+const LV=[
+{n:3,need:3,size:9,R:9999,amp:1.3,glow:1,decoy:0,t:'Уровень 1. Нужные числа светятся и дрожат. Проведите по ним.'},
+{n:3,need:4,size:9,R:9999,amp:.9,glow:0,decoy:0,t:'Уровень 2. Подсветки больше нет, но дрожь видна.'},
+{n:3,need:4,size:8,R:140,amp:.8,glow:0,decoy:0,t:'Уровень 3. Дрожат только числа рядом с курсором.'},
+{n:4,need:5,size:7,R:70,amp:.6,glow:0,decoy:5,t:'Уровень 4. Появились ложные дрожащие числа.'},
+{n:4,need:5,size:6,R:28,amp:.35,glow:0,decoy:10,t:'Уровень 5. Прислушайтесь к своим чувствам.'}];
+function startLevel(){
+ L=LV[lv];done=0;spawned=0;locked=false;binCount=[0,0,0,0,0];fills.forEach(f=>f.style.height=0);
+ errs=0;document.getElementById('err').textContent='ERR 0/10';document.getElementById('pct').textContent='0%';document.getElementById('lvl').textContent='LEVEL '+(lv+1)+'/5';
+ grid.style.setProperty('--a',L.amp);clusters.length=0;
+ cells.forEach(c=>{c.c=-1;c.d=false;c.e.textContent=rnd(10);c.e.classList.remove('sel','gone','hot')});
+ for(let i=0;i<Math.min(L.n,L.need);i++)spawn();
+ for(let k=0;k<L.decoy;k++){const i=rnd(N);if(cells[i].c<0)cells[i].d=true}
+ measure();hover();msg.textContent=L.t;
+}
+const STATEMENT='Простите меня за вред, который я причинил этому миру. Никто не может искупить мои поступки, кроме меня, и только во мне их пятно будет жить дальше.';
+let ac,mt,mt3,left=15,gen='';const STATEMENT_EN='Forgive me for the harm I have caused this world. None may atone for my actions but me and only in me shall their stain live on.';
+function ov(cls,html){const o=document.getElementById('ov');o.className=cls;o.innerHTML=html.replace(/>([^<]+)</g,(m,s)=>'>'+tr(s)+'<');o.hidden=false;return o}
+const GEN={disco:{type:'square',n:[0,12,7,12,0,12,7,12],ms:230,f:220},techno:{type:'sawtooth',n:[0,0,0,12,0,0,3,0],ms:150,f:110},jazz:{type:'triangle',n:[0,4,7,11,9,5,2,7],ms:300,f:196},rock:{type:'sawtooth',n:[0,0,7,0,5,0,7,10],ms:260,f:82}};
+function beat(gn){try{ac=ac||new AudioContext();ac.resume();const G=GEN[gn]||GEN.disco,n=G.n;let k=0;
+ return setInterval(()=>{const o=ac.createOscillator(),g=ac.createGain(),t=ac.currentTime;o.type=G.type;o.frequency.value=G.f*Math.pow(2,n[k%8]/12);g.gain.setValueAtTime(.06,t);g.gain.exponentialRampToValueAtTime(.001,t+.2);o.connect(g);g.connect(ac.destination);o.start();o.stop(t+.2);k++},G.ms)}catch(e){return 0}}
+function mde(keep){clearInterval(mt);clearInterval(mt3);if(!keep){left=15;gen='';document.getElementById('ov').removeAttribute('data-g')}mt=keep&&gen?beat(gen):0;
+ const o=ov('mde','<h1>MUSIC DANCE EXPERIENCE</h1><p>Мистер Милчик гордится вашей работой. Танцуйте.</p><p>Выберите жанр:</p><div id="gn"><button data-g="disco">Disco</button><button data-g="techno">Techno</button><button data-g="jazz">Jazz</button><button data-g="rock">Rock</button></div><button id="go">Вернуться к работе</button><small id="tm">15</small>');
+ const end=()=>{clearInterval(mt);clearInterval(mt3);o.hidden=true;lv++;startLevel()};
+ document.getElementById('go').onclick=end;
+ if(gen)o.dataset.g=gen;
+ const tm=document.getElementById('tm');tm.textContent=left;
+ document.querySelectorAll('#gn button').forEach(b=>b.onclick=()=>{gen=b.dataset.g;o.dataset.g=gen;clearInterval(mt);mt=beat(gen)});
+ mt3=setInterval(()=>{left--;tm.textContent=Math.max(left,0);if(left<=0)end()},1000)}
+const FACTS=[['Ваш аути отлично плавает.',0],['Ваш аути любит печь хлеб по воскресеньям.',0],['Ваш аути пишет стихи по вечерам.',0],['Ваш аути любит ходить в горы.',0],
+['Вы очень внимательно слушаете коллег.',1],['Вы аккуратно ведёте свои записи.',1],['Вы хорошо работаете с числами.',1],['Вы умеете находить закономерности.',1]];
+let wf=[],wi=0;
+function wellness(keep){
+ if(!keep){const A=FACTS.filter(f=>f[1]),B=FACTS.filter(f=>!f[1]);
+  wf=[...new Set([B[rnd(B.length)],A[rnd(A.length)],FACTS[rnd(FACTS.length)]])].sort(()=>Math.random()-.5);wi=0}
+ const f=wf[wi];
+ ov('wl','<h2>WELLNESS</h2><p>Мисс Кейси: «Я прочитаю вам факты, а вы скажете, любите ли вы их.»</p><div id="wf">'+f[0]+'</div><div id="wb"><button data-a="1">Люблю этот факт</button><button data-a="0">Не люблю этот факт</button></div><p id="wm"></p><small>'+(wi+1)+'/'+wf.length+'</small>');
+ const wm=document.getElementById('wm');
+ document.querySelectorAll('#wb button').forEach(b=>b.onclick=()=>{
+  if((b.dataset.a==='1')!==!!f[1]){document.querySelectorAll('#wb button').forEach(x=>x.disabled=true);wm.textContent=tr('Мисс Кейси: «Это нездоровый ответ. Вас ждёт мистер Милчик.»');setTimeout(()=>{lv++;breakroom()},2000);return}
+  document.querySelectorAll('#wb button').forEach(x=>x.disabled=true);
+  if(wi>=wf.length-1){wm.textContent=tr('Сессия окончена. Вы чувствуете спокойствие.');setTimeout(()=>{document.getElementById('ov').hidden=true;lv++;startLevel()},2000)}
+  else{wm.textContent=tr('Мисс Кейси: «Спасибо. Это здоровый ответ.»');setTimeout(()=>{wi++;wellness(1)},1400)}});
+}
+function addErr(){errs++;document.getElementById('err').textContent='ERR '+errs+'/10';if(errs>=10)breakroom()}
+function breakroom(){locked=true;const ST=lang==='en'?STATEMENT_EN:STATEMENT;
+ ov('br','<h2>БРЕЙКРУМ</h2><p>Мистер Милчик ждёт. Перепишите заявление без ошибок:</p><div id="tg"></div><textarea id="ta" rows="4" spellcheck="false" autocomplete="off"></textarea>');
+ const ta=document.getElementById('ta'),tg=document.getElementById('tg'),T=ST.toLowerCase();
+ const draw=()=>{let k=0;const v=ta.value.toLowerCase();while(k<v.length&&k<T.length&&v[k]===T[k])k++;
+  tg.innerHTML='<b style="color:#1a8a5a">'+ST.slice(0,k)+'</b>'+ST.slice(k)};
+ ta.oninput=()=>{draw();if(ta.value.trim().toLowerCase()===T){ta.disabled=true;
+ if(Math.random()<.25){tg.textContent=tr('Мистер Милчик: «Мне не кажется, что вы сожалеете. Напишите ещё раз.»');setTimeout(()=>{ta.value='';ta.disabled=false;draw();ta.focus()},2200);return}
+ tg.textContent=tr('Спасибо. Вы прощены.');setTimeout(()=>{document.getElementById('ov').hidden=true;startLevel()},1600)}};
+ ta.onpaste=e=>e.preventDefault();draw();ta.focus()}
+function finish(){locked=true;
+ if(lv<LV.length-1){msg.textContent='Уровень пройден. Переход дальше...';setTimeout(()=>{if(lv===0)mde();else if(lv===2&&Math.random()<.25)wellness();else{lv++;startLevel()}},1800)}
+ else msg.textContent='Отдел доволен вами. Вафельная вечеринка!';
+}
+function measure(){rects=cells.map(c=>c.e.getBoundingClientRect())}
+measure();addEventListener('resize',measure);addEventListener('scroll',measure);startLevel();
+function hover(){
+  cells.forEach((c,i)=>{const r=rects[i],dx=r.left+r.width/2-mx,dy=r.top+r.height/2-my,d=Math.hypot(dx,dy);
+    c.e.style.transform=d<70?`scale(${1+(70-d)/70*1.1})`:'';
+    c.e.classList.toggle('hot',(c.c>=0||c.d)&&d<L.R);c.e.classList.toggle('glow',!!L.glow&&c.c>=0)});
+}
+function sel(){
+  if(!drag)return[];
+  const x1=Math.min(drag.x,mx),x2=Math.max(drag.x,mx),y1=Math.min(drag.y,my),y2=Math.max(drag.y,my),out=[];
+  rects.forEach((r,i)=>{const cx=r.left+r.width/2,cy=r.top+r.height/2;if(cx>x1&&cx<x2&&cy>y1&&cy<y2)out.push(i)});
+  Object.assign(box.style,{display:'block',left:x1+'px',top:y1+'px',width:x2-x1+'px',height:y2-y1+'px'});
+  return out;
+}
+let paint=null;
+function hit(i,on){
+ if(done>=L.need||locked)return;
+ const c=cells[i];
+ if(c.c<0){if(!on)return;c.e.style.color='#ff6b6b';setTimeout(()=>c.e.style.color='',250);msg.textContent='Нет. Прислушайтесь к своим чувствам.';if(!strokeErr){strokeErr=true;addErr()}return}
+ c.e.classList.toggle('sel',on);
+ if(!on)return;
+ const cl=clusters[c.c];
+ if(!cl.every(j=>cells[j].e.classList.contains('sel')))return;
+ cl.forEach(j=>cells[j].e.classList.add('gone'));
+ const b=done%5;binCount[b]++;fills[b].style.height=Math.min(100,binCount[b]/Math.ceil(L.need/5)*100)+'%';done++;
+ document.getElementById('pct').textContent=Math.round(done/L.need*100)+'%';
+ setTimeout(()=>{cl.forEach(j=>{const x=cells[j];x.e.textContent=rnd(10);x.c=-1;x.e.classList.remove('gone','sel','hot')});
+  if(spawned<L.need)spawn();hover();
+  if(done>=L.need)finish()},650);
+ if(done<L.need)msg.textContent=['Работа — таинство и удовольствие.','Вы — хороший сотрудник.','Ваш отдел вами гордится.'][rnd(3)];
+}
+function at(e){const el=document.elementFromPoint(e.clientX,e.clientY);return cells.findIndex(c=>c.e===el)}
+addEventListener('pointerdown',e=>{mx=e.clientX;my=e.clientY;strokeErr=false;const i=at(e);if(i<0)return;paint=!cells[i].e.classList.contains('sel');hit(i,paint)});
+addEventListener('pointerup',()=>{paint=null});
+addEventListener('pointercancel',()=>{paint=null});
+addEventListener('pointermove',e=>{mx=e.clientX;my=e.clientY;hover();if(paint!==null){const i=at(e);if(i>=0)hit(i,paint)}});
+addEventListener('pointerup',()=>{
+  if(!drag)return;const s=sel();drag=null;box.style.display='none';cells.forEach(c=>c.e.classList.remove('sel'));
+  if(!s.length)return;
+  let best=-1,hit=0;clusters.forEach((cl,id)=>{const h=cl.filter(i=>s.includes(i)).length;if(cells[cl[0]].c===id&&h>hit){hit=h;best=id}});
+  if(best>=0&&hit>=7&&s.length-hit<=3){
+    const cl=clusters[best];s.forEach(i=>cells[i].e.classList.add('gone'));
+    const b=done%5;binCount[b]++;fills[b].style.height=Math.min(100,binCount[b]*50)+'%';done++;
+    document.getElementById('pct').textContent=done*10+'%';
+    setTimeout(()=>{s.forEach(i=>{cells[i].e.textContent=rnd(10);cells[i].c=-1;cells[i].e.classList.remove('gone')});
+      cl.forEach(i=>cells[i].c=-1);if(done<GOAL-2)spawn();
+      if(done>=GOAL){msg.textContent='Отдел доволен вами. Вафельная вечеринка!';}},650);
+    if(done<GOAL)msg.textContent=['Работа — таинство и удовольствие.','Вы — хороший сотрудник.','Ваш отдел вами гордится.'][rnd(3)];
+  }else msg.textContent='Нет. Прислушайтесь к своим чувствам.';
+});
+function route(){const h=location.hash.slice(1);if(h==='wellness')wellness();else if(h==='mde')mde();else if(h==='breakroom')breakroom()}
+addEventListener('hashchange',route);route();
+</script></body></html>
